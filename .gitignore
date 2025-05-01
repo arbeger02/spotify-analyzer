@@ -1,0 +1,42 @@
+# Environment variables (VERY IMPORTANT!)
+.env
+
+# Virtual environment directory (replace 'venv' if you named it differently)
+venv/
+*/venv/
+.venv/
+*/.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Flask session files (created by SESSION_TYPE = 'filesystem')
+flask_session/
+*/flask_session/
+
+# Operating System generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE/Editor specific files (optional, add yours if needed)
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Log files (if you create any)
+*.log
+logs/
+
+# Distribution / build artifacts (less relevant for this simple Flask app)
+dist/
+build/
+*.egg-info/
+
+# Instance folder (if used by Flask for config)
+instance/
+*/instance/

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Playlist Analysis{% endblock %}
+
+{% block content %}
+<h1>Playlist Analysis</h1>
+
+{# --- Input Form --- #}
+<form method="POST" action="{{ url_for('playlist_analysis') }}" class="playlist-input-form">
+    <label for="playlist_id_input">Enter Spotify Playlist URL or ID:</label>
+    <input type="text" id="playlist_id_input" name="playlist_id_input" value="{{ playlist_id_input }}" required placeholder="e.g., https://open.spotify.com/playlist/...">
+    <button type="submit">Analyze Playlist</button>
+</form>
+<hr>
+
+{# --- Display Area (Conditional) --- #}
+
+{# Display Error First if it exists #}
+{% if error %}
+    <p class="error-message">Error: {{ error }}</p>
+{% endif %}
+
+{# Display Playlist Info if available #}
+{% if playlist_info %}
+    <div class="playlist-header">
+        {% if playlist_info.image_url %}
+        <img src="{{ playlist_info.image_url }}" alt="{{ playlist_info.name }}" class="playlist-header-image">
+        {% endif %}
+        <div class="playlist-header-info">
+            <h2>{{ playlist_info.name }}</h2>
+            <p>By: {{ playlist_info.owner }}</p>
+            {% if playlist_info.description %}
+            <p class="playlist-description">{{ playlist_info.description | safe }}</p> {# Use safe if description contains HTML #}
+            {% endif %}
+             {% if playlist_info.external_url %}
+            <p><a href="{{ playlist_info.external_url }}" target="_blank" rel="noopener noreferrer">View on Spotify</a></p>
+            {% endif %}
+        </div>
+    </div>
+    <hr> {# Separator after header #}
+{% endif %}
+
+{# Display Message if no error but specific message exists #}
+{% if not error and message %}
+    <p>{{ message }}</p>
+{% endif %}
+
+{# Display Stats and Charts if data is available #}
+{% if viz_data %}
+    {# --- Summary Stats Section --- #}
+    <div class="summary-stats-container">
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.get('total_tracks', 'N/A') }}</span>
+            <span class="stat-label">Total Tracks</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.get('unique_artists', 'N/A') }}</span>
+            <span class="stat-label">Unique Artists</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.get('unique_genres', 'N/A') }}</span>
+            <span class="stat-label">Unique Genres</span>
+        </div>
+    </div>
+
+    {# --- Charts Section --- #}
+    <div id="playlist-charts"> {# Unique container ID #}
+        <div class="chart-container"> {# Use consistent styling class #}
+            <h2>Top 10 Artists (in Playlist)</h2>
+            {# Use unique IDs for chart divs on this page #}
+            <div id="playlist_top_artists_chart"></div>
+        </div>
+
+        <div class="chart-container"> {# Use consistent styling class #}
+            <h2>Top 10 Genres (in Playlist)</h2>
+            <div id="playlist_top_genres_chart"></div>
+        </div>
+    </div>
+
+    {# --- Embed data for JavaScript --- #}
+    <script>
+        const playlistAnalysisVizData = {{ viz_data | tojson | safe }};
+        console.log("Embedded playlistAnalysisVizData:", playlistAnalysisVizData);
+    </script>
+
+{% elif not error and not message and request.method == 'POST' %}
+    {# Show only if form was submitted but no data/error/message resulted #}
+    <p>Could not retrieve analysis data for the provided playlist.</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+    {# Link to the new JS file for this page's charts #}
+    <script src="{{ url_for('static', filename='js/playlist_analysis_charts.js') }}"></script>
+{% endblock %}

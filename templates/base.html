@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Spotify Analyzer{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="main-header">
+        <nav class="main-nav">
+            <ul class="nav-tabs">
+                {# Dashboard Tab #}
+                <li class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                </li>
+                {# Liked Songs Tab #}
+                {% if session.get('token_info') %}
+                <li class="{% if request.endpoint == 'liked_songs_page' %}active{% endif %}">
+                    <a href="{{ url_for('liked_songs_page') }}">Liked Songs</a>
+                </li>
+                {# Playlist Analysis Tab #}
+                <li class="{% if request.endpoint == 'playlist_analysis' %}active{% endif %}">
+                    <a href="{{ url_for('playlist_analysis') }}">Playlist Analysis</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        <div class="user-actions">
+            {# Show logout if user is logged in (check session), else show login #}
+            {% if session.get('token_info') %}
+                <a href="{{ url_for('logout') }}" class="logout-button">Logout</a>
+            {% else %}
+                {# Might want a login button here if they somehow reach a page without being logged in #}
+                <a href="{{ url_for('login') }}" class="login-button">Login</a>
+            {% endif %}
+        </div>
+    </header>
+
+    <main class="content-area">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; {{ current_year }} Your Spotify Analyzer</p> {# Example dynamic year #}
+    </footer>
+
+    {# Ensure Plotly (updated version) is loaded here #}
+    <script src='https://cdn.plot.ly/plotly-2.32.0.min.js' charset='utf-8'></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

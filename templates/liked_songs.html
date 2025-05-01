@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Liked Songs Analysis{% endblock %}
+
+{% block content %}
+<h1>Liked Songs Analysis</h1>
+{# --- Summary Stats Section --- #}
+{% if viz_data %}
+<div class="summary-stats-container">
+    <div class="stat-item">
+        <span class="stat-value">{{ viz_data.get('total_liked_tracks', 'N/A') }}</span>
+        <span class="stat-label">Total Liked Tracks</span>
+    </div>
+    <div class="stat-item">
+        <span class="stat-value">{{ viz_data.get('unique_liked_artists', 'N/A') }}</span>
+        <span class="stat-label">Unique Artists</span>
+    </div>
+    <div class="stat-item">
+        <span class="stat-value">{{ viz_data.get('unique_liked_genres', 'N/A') }}</span>
+        <span class="stat-label">Unique Genres</span>
+    </div>
+</div>
+{% endif %}
+{# --- End of Summary Stats Section --- #}
+
+<hr>
+
+{% if error %}
+    <p class="error-message">Error: {{ error }}</p> {# Use consistent error class #}
+{% elif message %}
+    <p>{{ message }}</p> {# For messages like 'No liked songs found' #}
+{% elif viz_data %}
+    <div id="liked-charts"> {# Container for liked charts #}
+        <div class="chart-container"> {# Use consistent styling class #}
+            <h2>Top 10 Artists</h2>
+            <div id="liked_top_artists_chart"></div>
+        </div>
+
+        <div class="chart-container"> {# Use consistent styling class #}
+            <h2>Top 10 Genres</h2>
+            <div id="liked_top_genres_chart"></div>
+        </div>
+    </div>
+
+    <script>
+        // Pass data safely to JavaScript
+        const likedSongsVizData = {{ viz_data | tojson | safe }};
+        console.log("Embedded likedSongsVizData:", likedSongsVizData); // Log for debugging
+    </script>
+
+{% else %}
+    <p>No liked songs data available to display.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+    {# Important: Include the JS file specific to this page #}
+    <script src="{{ url_for('static', filename='js/liked_songs_charts.js') }}"></script>
+{% endblock %}

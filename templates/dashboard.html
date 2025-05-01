@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Spotify Dashboard{% endblock %}
+
+{% block content %}
+<h1>Welcome, {{ username }}!</h1>
+<h2>Your Top Music Overview</h2>
+
+<div id="time_range_selector" style="margin-bottom: 20px;">
+    <strong>Select Time Period:</strong>
+    <a href="{{ url_for('dashboard', time_range='short_term') }}"
+       class="time-range-btn {% if selected_time_range == 'short_term' %}active{% endif %}">
+       Last 4 Weeks
+    </a>
+    <a href="{{ url_for('dashboard', time_range='medium_term') }}"
+       class="time-range-btn {% if selected_time_range == 'medium_term' %}active{% endif %}">
+       Last 6 Months
+    </a>
+    <a href="{{ url_for('dashboard', time_range='long_term') }}"
+       class="time-range-btn {% if selected_time_range == 'long_term' %}active{% endif %}">
+       Last 12 Months
+    </a>
+</div>
+<hr>
+
+{% if error %}
+    <p class="error-message">Error: {{ error }}</p> {# Added a class for styling #}
+ {% elif viz_data %}
+ {# --- SECTION 1: Raw Data Tables (in Flex Containers) --- #}
+    <h2>Raw Data Tables ({{ selected_time_range.replace('_', ' ') | title }})</h2>
+    <div class="raw-data-flex-container">
+        <div class="data-table-container">
+            <h3>Top Artists (Max {{ viz_data.artists_raw | length }})</h3>
+            <div class="scrollable-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Artist</th>
+                            <th>Popularity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for artist in viz_data.artists_raw %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                {% if artist.images and artist.images[-1] %} {# Use smallest image for thumb #}
+                                <img src="{{ artist.images[-1].url }}" alt="{{ artist.name }}" class="table-thumb">
+                                {% endif %}
+                                {{ artist.name }}
+                            </td>
+                            <td>{{ artist.popularity }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5">No raw artist data available.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="data-table-container">
+            <h3>Top Tracks (Max {{ viz_data.tracks_raw | length }})</h3>
+            <div class="scrollable-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Track</th>
+                            <th>Artist(s)</th>
+                            <th>Album</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for track in viz_data.tracks_raw %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                 {% if track.album and track.album.images and track.album.images[-1] %} {# Use smallest image #}
+                                 <img src="{{ track.album.images[-1].url }}" alt="{{ track.name }}" class="table-thumb">
+                                 {% endif %}
+                                {{ track.name }}
+                            </td>
+                            <td>{{ track.artists | map(attribute='name') | join(', ') }}</td>
+                            <td>{{ track.album.name if track.album else 'N/A' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6">No raw track data available.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div> {# --- End of raw-data-section --- #}
+
+    {# --- Charts Section --- #}
+    <div id="dashboard-charts"> {# Unique container ID #}
+        <div class="chart-container"> {# Use consistent styling class #}
+            <h2>Top 10 Genres ({{ selected_time_range.replace('_', ' ') | title }})</h2>
+            <div id="top_genres_chart"></div>
+        </div>
+
+
+    <script>
+        const dashboardVizData = {{ viz_data | tojson | safe }};
+        console.log("Embedded dashboardVizData:", dashboardVizData);
+    </script>
+
+ {% else %}
+     <p>No visualization data available.</p>
+ {% endif %}
+
+
+{% endblock %}
+
+{% block scripts %}
+<script src='https://cdn.plot.ly/plotly-2.32.0.min.js' charset='utf-8'></script>
+<script src="{{ url_for('static', filename='js/dashboard_charts.js') }}"></script>
+{% endblock %}
