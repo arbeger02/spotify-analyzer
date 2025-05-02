@@ -39,6 +39,50 @@ document.addEventListener('DOMContentLoaded', function() {
 function renderLikedSongsCharts(data) {
     console.log("Inside renderLikedSongsCharts function.");
 
+     // --- Most Followed Artists Chart ---
+    try {
+        const artists = data.top_followed_artists || [];
+        if (artists.length > 0) {
+            const artistNames = artists.map(a => a.name);
+            const artistFollowers = artists.map(a => a.followers);
+            const trace = {
+                y: artistNames.reverse(),
+                x: artistFollowers.reverse(),
+                text: artistFollowers.map(f => `${f.toLocaleString()} followers`),
+                hoverinfo: 'text+y',
+                type: 'bar', orientation: 'h', marker: { color: '#0d6efd' } // Blue
+            };
+             const layout = { /* ... similar layout ... */
+                 xaxis: { title: 'Total Followers', automargin: true },
+                 yaxis: { automargin: true },
+                 margin: { l: 150, r: 30, b: 50, t: 30 }
+             };
+            Plotly.newPlot('liked_most_followed_artists_chart', [trace], layout, {responsive: true});
+        } else { document.getElementById('liked_most_followed_artists_chart').innerHTML = '<p>No data</p>';}
+    } catch(e) { console.error("Error rendering most followed artists chart:", e); }
+
+     // --- Least Followed Artists Chart ---
+    try {
+        const artists = data.bottom_followed_artists || [];
+        if (artists.length > 0) {
+             const artistNames = artists.map(a => a.name);
+            const artistFollowers = artists.map(a => a.followers);
+            const trace = {
+                y: artistNames.reverse(),
+                x: artistFollowers.reverse(), // Already sorted ascending, reverse for plot
+                text: artistFollowers.map(f => `${f.toLocaleString()} followers`),
+                hoverinfo: 'text+y',
+                type: 'bar', orientation: 'h', marker: { color: '#6c757d' } // Grey
+            };
+             const layout = { /* ... similar layout ... */
+                xaxis: { title: 'Total Followers', automargin: true },
+                 yaxis: { automargin: true },
+                 margin: { l: 150, r: 30, b: 50, t: 30 }
+             };
+            Plotly.newPlot('liked_least_followed_artists_chart', [trace], layout, {responsive: true});
+        } else { document.getElementById('liked_least_followed_artists_chart').innerHTML = '<p>No data</p>';}
+    } catch(e) { console.error("Error rendering least followed artists chart:", e); }
+
     // --- Top 10 Artists Chart (Liked Songs) ---
     try {
         console.log("Processing liked artists chart...");

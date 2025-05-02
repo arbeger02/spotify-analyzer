@@ -30,16 +30,105 @@
 {% elif message %}
     <p>{{ message }}</p> {# For messages like 'No liked songs found' #}
 {% elif viz_data %}
-    <div id="liked-charts"> {# Container for liked charts #}
-        <div class="chart-container"> {# Use consistent styling class #}
-            <h2>Top 10 Artists</h2>
-            <div id="liked_top_artists_chart"></div>
-        </div>
+{# --- Charts & Tables Section --- #}
+<div id="liked-charts">
+    <div class="chart-container"> {# Use consistent styling class #}
+        <h2>Top 10 Artists</h2>
+        <div id="liked_top_artists_chart"></div>
+    </div>
 
-        <div class="chart-container"> {# Use consistent styling class #}
-            <h2>Top 10 Genres</h2>
-            <div id="liked_top_genres_chart"></div>
+    <div class="chart-container"> {# Use consistent styling class #}
+        <h2>Top 10 Genres</h2>
+        <div id="liked_top_genres_chart"></div>
+    </div>
+</div>
+<div class="flex-container">
+    {# --- Most Popular Tracks Table --- #}
+    <div class="data-table-container list-table"> {# Add specific class #}
+        <h2>Most Popular Liked Tracks</h2>
+        <div class="fixed-height-table"> {# Optional: Use if you want constrained height #}
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th></th> {# Image col #}
+                        <th>Track</th>
+                        <th>Artist(s)</th>
+                        <th>Album</th>
+                        <th>Popularity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for track in viz_data.top_popular_tracks %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            {% if track.album_image_url %}
+                            <img src="{{ track.album_image_url }}" alt="{{ track.album_name }}" class="table-thumb">
+                            {% else %} {# Placeholder #}
+                            <div class="table-placeholder-thumb"></div>
+                            {% endif %}
+                        </td>
+                        <td>{{ track.name }}</td>
+                        <td>{{ track.artists | join(', ') }}</td>
+                        <td>{{ track.album_name }}</td>
+                        <td>{{ track.popularity }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">No data available.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
+    </div>
+
+    {# --- Least Popular Tracks Table --- #}
+     <div class="data-table-container list-table">
+        <h2>Least Popular Liked Tracks</h2>
+         <div class="fixed-height-table">
+            <table>
+                 <thead>
+                    <tr>
+                        <th>#</th>
+                        <th></th> {# Image col #}
+                        <th>Track</th>
+                        <th>Artist(s)</th>
+                        <th>Album</th>
+                        <th>Popularity</th>
+                    </tr>
+                </thead>
+                 <tbody>
+                    {% for track in viz_data.bottom_popular_tracks %}
+                    <tr>
+                         {# Use track popularity rank or simple index #}
+                         {# For Bottom 5, index might be clearer than rank #}
+                        <td>{{ loop.index }}</td>
+                         <td>
+                            {% if track.album_image_url %}
+                            <img src="{{ track.album_image_url }}" alt="{{ track.album_name }}" class="table-thumb">
+                            {% else %}
+                            <div class="table-placeholder-thumb"></div>
+                            {% endif %}
+                        </td>
+                        <td>{{ track.name }}</td>
+                        <td>{{ track.artists | join(', ') }}</td>
+                        <td>{{ track.album_name }}</td>
+                        <td>{{ track.popularity }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">No data available.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="chart-container">
+        <h2>Most Followed Artists</h2>
+        <div id="liked_most_followed_artists_chart"></div> 
+    </div>
+        <div class="chart-container">
+        <h2>Least Followed Artists</h2>
+        <div id="liked_least_followed_artists_chart"></div> 
     </div>
 
     <script>

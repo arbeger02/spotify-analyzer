@@ -2,10 +2,11 @@ import os
 import re
 import time
 import pandas as pd
+import numpy as np
 from flask import Flask, request, redirect, session, url_for, render_template, jsonify
 from flask_session import Session 
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, time as dt_time
 import pytz 
@@ -29,6 +30,17 @@ Session(app)
 # Spotify API Scopes (Permissions your app needs)
 # Adjust scopes based on the data you need
 SCOPES = 'user-read-recently-played user-library-read user-top-read'
+
+# --- Create App-Level Spotify Client (Client Credentials Flow) ---
+try:
+    client_credentials_manager = SpotifyClientCredentials(client_id=os.getenv('SPOTIPY_CLIENT_ID'),
+                                                          client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'))
+    # This client authenticates the app itself, not a user
+    sp_app = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+    logging.info("Created app-level Spotify client (Client Credentials Flow).")
+except Exception as e:
+    sp_app = None # Set to None if creation fails
+    logging.error(f"Failed to create app-level Spotify client: {e}")
 
 # --- Authentication Routes ---
 
@@ -252,33 +264,56 @@ def dashboard():
         logging.exception("Unexpected error on /dashboard:") # Log the full traceback
         return render_template('dashboard.html', username=username, error="An unexpected error occurred.", selected_time_range=time_range)
     
-# --- Helper function to get artist genres ---
-memoized_genres = {} # Simple in-memory cache for genres
+# --- Helper function to get artist details ---
+# Simple in-memory cache for artist details
+memoized_artist_details = {}
 
-def get_artist_genres(sp, artist_ids):
-    """Fetches genres for a list of artist IDs, using a simple cache."""
-    genres_map = {}
-    ids_to_fetch = [aid for aid in artist_ids if aid not in memoized_genres]
+def get_artist_details(sp_client, artist_ids):
+    """
+    Fetches name, genres, followers, and image URL for a list of artist IDs.
+    Uses a simple cache. Returns a dictionary mapping ID to details.
+    """
+    details_map = {}
+    # Ensure IDs are unique and not None before checking cache/fetching
+    unique_ids = list(filter(None, set(artist_ids)))
+    ids_to_fetch = [aid for aid in unique_ids if aid not in memoized_artist_details]
+    logging.info(f"Need to fetch details for {len(ids_to_fetch)} artists.")
 
     # Fetch in batches of 50 (API limit)
     for i in range(0, len(ids_to_fetch), 50):
         batch_ids = ids_to_fetch[i:i+50]
+        logging.info(f"Fetching batch {i//50 + 1}: {batch_ids}")
         try:
-            artists_info = sp.artists(batch_ids)
-            for artist in artists_info['artists']:
-                if artist: # Check if artist info was found
-                    memoized_genres[artist['id']] = artist.get('genres', [])
-        except Exception as e:
-            logging.error(f"Error fetching artist batch {batch_ids}: {e}")
-            # Assign empty genre list on error for these IDs to avoid re-fetching constantly
+            artists_info = sp_client.artists(batch_ids)
+            for artist_data in artists_info['artists']:
+                if artist_data: # Check if artist info was found
+                    artist_id = artist_data['id']
+                    memoized_artist_details[artist_id] = {
+                        'name': artist_data.get('name', 'N/A'),
+                        'genres': artist_data.get('genres', []),
+                        'followers': artist_data.get('followers', {}).get('total', 0),
+                        'image_url': artist_data['images'][0]['url'] if artist_data.get('images') else None
+                    }
+                # Optional: Handle case where API returns None for a requested ID within the batch
+                # You might store a specific marker for 'not found' IDs in the cache
+        except spotipy.SpotifyException as e:
+            logging.error(f"Spotify API error fetching artist batch {batch_ids}: {e}")
+            # Cache failure for these IDs to avoid constant retries in this request
             for aid in batch_ids:
-                 memoized_genres[aid] = []
+                 memoized_artist_details[aid] = None # Mark as failed/unavailable
+        except Exception as e:
+             logging.error(f"Non-Spotify error fetching artist batch {batch_ids}: {e}")
+             for aid in batch_ids:
+                 memoized_artist_details[aid] = None # Mark as failed/unavailable
+        # time.sleep(0.1) # Optional delay between batches
 
+    # Populate the final map from cache or fetched details
+    default_details = {'name': 'N/A', 'genres': [], 'followers': 0, 'image_url': None}
+    for artist_id in unique_ids:
+         # Use cached detail if valid, otherwise use default
+         details_map[artist_id] = memoized_artist_details.get(artist_id) or default_details
 
-    for artist_id in artist_ids:
-         genres_map[artist_id] = memoized_genres.get(artist_id, []) # Use cached or fetched
-
-    return genres_map
+    return details_map
 
 # --- Route and Logic for Liked Songs Page ---
 @app.route('/liked_songs')
@@ -321,7 +356,7 @@ def liked_songs_page():
         num_liked_tracks = len(all_tracks_items)
 
         if not all_tracks_items:
-             return render_template('liked_songs.html', username=username, message="No liked songs found.")
+             return render_template('liked_songs.html', username=username, message="No liked songs found.")        
 
         # --- Process Liked Songs Data ---
         data = []
@@ -340,54 +375,82 @@ def liked_songs_page():
 
             data.append({
                 # 'added_at': datetime.fromisoformat(added_at_str.replace('Z', '+00:00')) if added_at_str else None, # Parsing date if needed
-                'track_name': track.get('name', 'N/A'),
+                'name': track.get('name', 'N/A'),
                 'track_id': track.get('id'),
                 'artist_name': artist_name,
+                'artists': [a.get('name', 'N/A') for a in track.get('artists', [])],
                 'artist_id': artist_id, # Store ID for genre fetching
+                'popularity': track.get('popularity', 0), # <<< Extract popularity
                 'album_name': track.get('album', {}).get('name', 'N/A'),
                 'album_image_url': track.get('album', {}).get('images', [{}])[0].get('url') if track.get('album', {}).get('images') else None
             })
 
-        df_liked = pd.DataFrame(data)
-
         num_unique_artists = len(liked_artist_ids)
 
+        df_liked = pd.DataFrame(data)
         # --- Calculate Top 10 Artists by Liked Songs ---
         top_artists_liked = df_liked['artist_name'].value_counts().head(10).reset_index()
         top_artists_liked.columns = ['artist', 'count']
         # Get image for top artists (requires matching back to original data or another call - simplified here)
 
-        # --- Get Genres for Liked Artists & Calculate Top 5 Genres ---
-        logging.info(f"Fetching genres for {len(liked_artist_ids)} unique artists in liked songs...")
-        liked_artist_genres_map = get_artist_genres(sp, list(liked_artist_ids))
-        logging.info("Genre fetching complete.")
+        # Fetch Artist Details (Followers, Genres)
+        logging.info(f"Fetching details for {num_unique_artists} unique artists in liked songs...")
+        artist_details_map = get_artist_details(sp, list(liked_artist_ids))
+        logging.info("Artist detail fetching complete.")
 
-        # Add genres to the DataFrame (using the primary artist's genres)
-        df_liked['genres'] = df_liked['artist_id'].map(liked_artist_genres_map)
-
-        # Explode the DataFrame to have one row per genre per track
-        # Filter out rows where genres might be missing or artist_id was None
-        df_genres_exploded = df_liked.dropna(subset=['genres', 'artist_id']).explode('genres')
-
-        top_genres_liked = pd.Series(dtype=int) # Initialize empty Series
-        num_unique_genres = 0
-        if not df_genres_exploded.empty:
-            # Calculate unique genres *before* getting the top 10 counts
-            num_unique_genres = df_genres_exploded['genres'].nunique()
-            top_genres_liked = df_genres_exploded['genres'].value_counts().head(10).reset_index()
-            top_genres_liked.columns = ['genre', 'count']
+        # Calculate Stats & Top/Bottom Lists
+        # Tracks by Popularity
+        # Filter out tracks with pop 0 unless they are the only ones? Optional.
+        valid_popularity_tracks = [t for t in data if t['popularity'] is not None]
+        valid_popularity_tracks.sort(key=lambda x: x['popularity'], reverse=True)
+        top_5_popular_tracks = valid_popularity_tracks[:5]
+        # Avoid sorting tracks with 0 popularity as "least popular" if possible
+        non_zero_pop_tracks = [t for t in valid_popularity_tracks if t['popularity'] > 0]
+        if len(non_zero_pop_tracks) >= 5:
+             bottom_5_popular_tracks = sorted(non_zero_pop_tracks, key=lambda x: x['popularity'])[:5]
         else:
-             top_genres_liked = pd.DataFrame(columns=['genre', 'count'])
-             logging.warning("No genres found to calculate stats/top genres for liked songs.")
+             # Fallback if fewer than 5 tracks have > 0 popularity
+             bottom_5_popular_tracks = sorted(valid_popularity_tracks, key=lambda x: x['popularity'])[:5]
+
+
+        # Artists by Followers
+        # Create list of {'id': ..., 'name': ..., 'followers': ...} from fetched details
+        artist_follower_list = [{'id': aid, **details} for aid, details in artist_details_map.items() if details] # Filter out None details
+        artist_follower_list.sort(key=lambda x: x['followers'], reverse=True)
+        top_5_followed_artists = artist_follower_list[:5]
+        # Filter out artists with 0 followers if possible for "least followed"
+        non_zero_follower_artists = [a for a in artist_follower_list if a['followers'] > 0]
+        if len(non_zero_follower_artists) >= 5:
+            bottom_5_followed_artists = sorted(non_zero_follower_artists, key=lambda x: x['followers'])[:5]
+        else:
+             # Fallback if fewer than 5 artists have > 0 followers
+            bottom_5_followed_artists = sorted(artist_follower_list, key=lambda x: x['followers'])[:5]
+
+        # Genres (Unique Count & Top 10) - requires mapping genres back to tracks
+        all_genres = []
+        for track_info in data:
+            artist_id = track_info.get('artist_id')
+            if artist_id and artist_id in artist_details_map and artist_details_map[artist_id]:
+                all_genres.extend(artist_details_map[artist_id]['genres'])
+
+        num_unique_genres = len(set(all_genres))
+        top_genres_liked = []
+        if all_genres:
+            genre_counts_liked = Counter(all_genres)
+            top_genres_liked = [{'genre': g, 'count': c} for g, c in genre_counts_liked.most_common(10)]
 
         # --- Prepare Data for Template ---
         viz_data = {
             # Convert to dict records for easy JSON serialization
             "top_artists": top_artists_liked.to_dict(orient='records'),
-            "top_genres": top_genres_liked.to_dict(orient='records'),
+            "top_genres": top_genres_liked,
             "total_liked_tracks": num_liked_tracks,
             "unique_liked_artists": num_unique_artists,
-            "unique_liked_genres": num_unique_genres
+            "unique_liked_genres": num_unique_genres,
+            "top_popular_tracks": top_5_popular_tracks,
+            "bottom_popular_tracks": bottom_5_popular_tracks,
+            "top_followed_artists": top_5_followed_artists,
+            "bottom_followed_artists": bottom_5_followed_artists
         }
 
         return render_template('liked_songs.html',
@@ -417,10 +480,23 @@ def extract_playlist_id(playlist_input):
     return None # Return None if no valid ID found
 
 
-# --- NEW: Route for Playlist Analysis ---
+# --- Route for Playlist Analysis ---
 @app.route('/playlist_analysis', methods=['GET', 'POST'])
 def playlist_analysis():
     sp = create_spotify_client()
+
+    if sp: # Make sure client creation succeeded
+        try:
+            test_track_id = '4uLu6hFjJmix5cZBNdAamC' # Example: Publicly known track ID ("Take On Me")
+            logging.info(f"Attempting test call to audio_features for track: {test_track_id}")
+            test_features = sp.audio_features(tracks=[test_track_id])
+            logging.info(f"Test call result: {test_features}")
+        except Exception as test_e:
+            logging.error(f"Test call to audio_features failed: {test_e}")
+    else:
+        # Redirect to login if sp creation failed
+        return redirect(url_for('login'))
+
     if not sp:
         return redirect(url_for('login'))
 
@@ -429,6 +505,8 @@ def playlist_analysis():
     viz_data = None
     error_message = None
     message = None
+    scatter_plot_data = None
+    avg_stats = None
 
     if request.method == 'POST':
         playlist_id_input = request.form.get('playlist_id_input')
@@ -445,7 +523,7 @@ def playlist_analysis():
         else:
             logging.info(f"Attempting to analyze playlist ID: {playlist_id}")
             try:
-                # 1. Get Playlist Metadata
+                # Get Playlist Metadata
                 logging.info("Fetching playlist metadata...")
                 playlist_data = sp.playlist(playlist_id)
                 playlist_info = {
@@ -457,7 +535,7 @@ def playlist_analysis():
                 }
                 logging.info(f"Playlist Name: {playlist_info['name']}")
 
-                # 2. Fetch All Playlist Tracks (handles pagination)
+                # Fetch All Playlist Tracks (handles pagination)
                 all_playlist_tracks = []
                 limit = 100 # Max limit for playlist items is 100
                 offset = 0
@@ -465,7 +543,7 @@ def playlist_analysis():
                 while True:
                     try:
                         results = sp.playlist_items(playlist_id, limit=limit, offset=offset,
-                                                     fields='items(track(id, name, artists(id, name), album(name, images))), total, next') # Specify fields to fetch
+                                                     fields='items(track(id, name, popularity, artists(id, name), album(name, images))), total, next') # Specify fields to fetch
                         items = results.get('items', [])
                         if not items: break
 
@@ -495,57 +573,192 @@ def playlist_analysis():
                 elif not all_playlist_tracks:
                     message = "No valid/accessible tracks found in this playlist."
                 else:
-                    # 3. Process Tracks & Calculate Stats
-                    num_playlist_tracks = len(all_playlist_tracks)
-                    playlist_artist_ids = set()
-                    processed_data = []
+                    # Extract Track IDs for Audio Features
+                    track_ids = [track['id'] for track in all_playlist_tracks if track and track.get('id')]
+                    num_playlist_tracks = len(track_ids) # Count based on valid IDs found
+
+                    # Fetch Audio Features (Batching required)
+                    logging.info(f"Fetching audio features for {num_playlist_tracks} tracks...")
+                    audio_features_list = []
+                    for i in range(0, len(track_ids), 100): # Max 100 IDs per request
+                        batch_ids = track_ids[i:i+100]
+                        try:
+                            batch_features = sp_app.audio_features(tracks=batch_ids)
+                            # Filter out None results before extending
+                            audio_features_list.extend([f for f in batch_features if f is not None])
+                            logging.info(f"Fetched features for batch {i//100 + 1}")
+                        except spotipy.SpotifyException as e:
+                            logging.warning(f"Spotify error fetching audio features batch {i//100 + 1}: {e}")
+                        except Exception as e:
+                             logging.warning(f"General error fetching audio features batch {i//100 + 1}: {e}")
+                        # time.sleep(0.1) # Optional delay
+
+                    logging.info(f"Successfully fetched features for {len(audio_features_list)} tracks.")
 
                     for track in all_playlist_tracks:
                         primary_artist = track['artists'][0] if track.get('artists') else None
                         artist_id = primary_artist['id'] if primary_artist and primary_artist.get('id') else None
                         artist_name = primary_artist['name'] if primary_artist else 'N/A'
 
-                        if artist_id: playlist_artist_ids.add(artist_id)
+                    # Create DataFrame from track list
+                    df_tracks = pd.DataFrame([{
+                        'id': t['id'],
+                        'name': t.get('name', 'N/A'),
+                        'artist_name': artist_name,
+                        'artists': [a.get('name', 'N/A') for a in t.get('artists', [])],
+                        'artist_id': t['artists'][0]['id'] if t.get('artists') and t['artists'][0].get('id') else None,
+                        'album_name': t.get('album', {}).get('name', 'N/A'),
+                        'album_image_url': t.get('album', {}).get('images', [{}])[-1].get('url'), # Smallest image
+                        'popularity': t.get('popularity', 0)
+                    } for t in all_playlist_tracks if t and t.get('id')])
 
-                        processed_data.append({
-                            'track_name': track.get('name', 'N/A'),
-                            'track_id': track.get('id'),
-                            'artist_name': artist_name,
-                            'artist_id': artist_id,
-                            'album_name': track.get('album', {}).get('name', 'N/A'),
-                        })
+                    # Create DataFrame from features (handle potential missing features)
+                    if audio_features_list:
+                        df_features = pd.DataFrame(audio_features_list)
+                        # Select only relevant feature columns + id for merging
+                        feature_cols = ['id', 'tempo', 'energy', 'danceability', 'valence',
+                                        'acousticness', 'instrumentalness', 'liveness', 'speechiness']
+                        df_features = df_features[feature_cols]
 
-                    df_playlist = pd.DataFrame(processed_data)
+                        # Merge DataFrames
+                        df_combined = pd.merge(df_tracks, df_features, on='id', how='left')
+                        # Fill NaN for numeric features where merge failed (optional, depends on desired avg calc)
+                        numeric_feature_cols = feature_cols[1:] # Exclude 'id'
+                        df_combined[numeric_feature_cols] = df_combined[numeric_feature_cols].fillna(0) # Example: fill with 0
+                    else:
+                        # Handle case where no audio features were fetched
+                        df_combined = df_tracks
+                        # Add empty columns for features if needed later, filled with NaN or 0
+                        numeric_feature_cols = ['tempo', 'energy', 'danceability', 'valence',
+                                        'acousticness', 'instrumentalness', 'liveness', 'speechiness']
+                        for col in numeric_feature_cols:
+                            df_combined[col] = 0.0 # Or np.nan if preferred
+
+                    # Calculate Average Stats
+                    avg_stats = {
+                        'avg_tempo': round(df_combined['tempo'].mean()) if 'tempo' in df_combined else 0,
+                        'avg_energy': round(df_combined['energy'].mean(), 2) if 'energy' in df_combined else 0.0,
+                        'avg_popularity': round(df_combined['popularity'].mean()) if 'popularity' in df_combined else 0,
+                        'avg_danceability': round(df_combined['danceability'].mean(), 2) if 'danceability' in df_combined else 0.0,
+                        'avg_valence': round(df_combined['valence'].mean(), 2) if 'valence' in df_combined else 0.0,
+                    }
+                    logging.info(f"Calculated Avg Stats: {avg_stats}")
+
+
+                    # Prepare Scatter Plot Data (list of dictionaries)
+                    scatter_plot_cols = ['name', 'artists', 'popularity'] + numeric_feature_cols
+                    # Select necessary columns, handle potential missing columns gracefully
+                    cols_to_select = [col for col in scatter_plot_cols if col in df_combined.columns]
+                    scatter_plot_data = df_combined[cols_to_select].to_dict(orient='records')
+
+                    
+                    playlist_artist_ids = set(df_combined['artist_id'].dropna())
                     num_unique_artists = len(playlist_artist_ids)
 
-                    # Calculate Top 5 Artists
-                    top_artists_playlist = df_playlist['artist_name'].value_counts().head(10).reset_index()
+                    # Calculate Top 10 Artists
+                    top_artists_playlist = df_tracks['artists'].value_counts().head(10).reset_index()
                     top_artists_playlist.columns = ['artist', 'count']
 
-                    # Get Genres & Calculate Stats/Top 5
-                    logging.info(f"Fetching genres for {num_unique_artists} unique artists in playlist...")
-                    playlist_artist_genres = get_artist_genres(sp, list(playlist_artist_ids))
-                    logging.info("Genre fetching complete.")
+                   # Fetch Artist Details
+                    logging.info(f"Fetching details for {num_unique_artists} unique artists in playlist...")
+                    artist_details_map = get_artist_details(sp, list(playlist_artist_ids))
+                    logging.info("Artist detail fetching complete.")
 
-                    df_playlist['genres'] = df_playlist['artist_id'].map(playlist_artist_genres)
-                    df_genres_exploded_pl = df_playlist.dropna(subset=['genres', 'artist_id']).explode('genres')
+                    # Calculate Stats & Top/Bottom Lists (Similar logic as liked songs)
+                    # Tracks by Popularity
+                    # Initialize lists in case of errors or empty DataFrame
+                    top_5_popular_tracks = []
+                    bottom_5_popular_tracks = []
 
-                    num_unique_genres = 0
-                    if not df_genres_exploded_pl.empty:
-                        num_unique_genres = df_genres_exploded_pl['genres'].nunique()
-                        top_genres_playlist = df_genres_exploded_pl['genres'].value_counts().head(10).reset_index()
-                        top_genres_playlist.columns = ['genre', 'count']
+                    # Ensure DataFrame is not empty and 'popularity' column exists
+                    if not df_tracks.empty and 'popularity' in df_tracks.columns:
+                        try:
+                            # Get Top 5 most popular tracks directly
+                            top_5_popular_tracks_df = df_tracks.nlargest(5, 'popularity')
+                            top_5_popular_tracks = top_5_popular_tracks_df.to_dict(orient='records')
+                            # Get Bottom 5 least popular tracks (try to exclude 0 popularity)
+                            non_zero_pop_df = df_tracks[df_tracks['popularity'] > 0]
+                            if not non_zero_pop_df.empty:
+                                # Get the 5 tracks with the smallest popularity score from the non-zero ones
+                                bottom_5_popular_tracks_df = non_zero_pop_df.nsmallest(5, 'popularity')
+                            else:
+                                # Fallback: If all tracks have 0 popularity (or DataFrame was empty initially filtered),
+                                logging.warning("No tracks with popularity > 0 found. Getting tracks with lowest popularity overall.")
+                                bottom_5_popular_tracks_df = df_tracks.nsmallest(5, 'popularity')
+
+                            bottom_5_popular_tracks = bottom_5_popular_tracks_df.to_dict(orient='records')
+                        except Exception as e:
+                            logging.error(f"Error processing track popularity for tables: {e}")
+
+                    # Artists by Followers
+                    artist_follower_list = [{'id': aid, **details} for aid, details in artist_details_map.items() if details]
+                    artist_follower_list.sort(key=lambda x: x['followers'], reverse=True)
+                    top_5_followed_artists = artist_follower_list[:5]
+                    non_zero_follower_artists = [a for a in artist_follower_list if a['followers'] > 0]
+                    if len(non_zero_follower_artists) >= 5:
+                        bottom_5_followed_artists = sorted(non_zero_follower_artists, key=lambda x: x['followers'])[:5]
                     else:
-                        top_genres_playlist = pd.DataFrame(columns=['genre', 'count'])
-                        logging.warning("No genres found for this playlist.")
+                         bottom_5_followed_artists = sorted(artist_follower_list, key=lambda x: x['followers'])[:5]
 
-                    # 4. Prepare viz_data
+                    # Genres (Unique Count & Top 10)
+                    all_genres_pl = []
+                    # Ensure required columns exist and map is valid before iterating
+                    if 'artist_id' in df_tracks.columns and artist_details_map is not None:
+                        # Use df_tracks.itertuples() for efficient row iteration
+                        # name='Track' allows accessing columns like track_row.artist_id
+                        for track_row in df_tracks.itertuples(index=False, name='Track'):
+                            try:
+                                artist_id = track_row.artist_id
+                                # Check if artist_id exists, is in the map, and the map entry is valid
+                                # Use pd.notna to handle potential None or NaN artist_id values
+                                if pd.notna(artist_id) and artist_id in artist_details_map and artist_details_map[artist_id]:
+                                    # Extend the list with the genres for this artist (handle potential None genres)
+                                    genres = artist_details_map[artist_id].get('genres', []) # Default to empty list
+                                    if genres: # Only extend if the list is not empty
+                                        all_genres_pl.extend(genres)
+                            except AttributeError:
+                                # Handle cases where a row might not have the expected attribute if tuple name wasn't used correctly
+                                logging.warning(f"Skipping row due to missing attribute during genre processing: {track_row}")
+                                continue
+                    else:
+                        # Log warnings if prerequisites are missing
+                        if 'artist_id' not in df_tracks.columns:
+                            logging.warning("'artist_id' column not found in DataFrame for genre processing.")
+                        if artist_details_map is None:
+                            logging.warning("'artist_details_map' is None, cannot process genres.")
+
+                    # Calculate unique count from the collected list
+                    # Use try-except in case set() fails on unexpected data types, though unlikely here
+                    try:
+                        num_unique_genres = len(set(all_genres_pl))
+                    except TypeError as e:
+                        logging.error(f"Could not calculate unique genres, potential type issue in list: {e}")
+                        num_unique_genres = 0
+
+
+                    # Calculate top 10 from the collected list (this part was already correct conceptually)
+                    top_genres_playlist = []
+                    if all_genres_pl:
+                        try:
+                            genre_counts_pl = Counter(all_genres_pl)
+                            # Format for viz_data: list of dictionaries
+                            top_genres_playlist = [{'genre': g, 'count': c} for g, c in genre_counts_pl.most_common(10)]
+                        except Exception as e:
+                            logging.error(f"Error calculating top genres with Counter: {e}")
+
+                    # Prepare viz_data
                     viz_data = {
                         "top_artists": top_artists_playlist.to_dict(orient='records'),
-                        "top_genres": top_genres_playlist.to_dict(orient='records'),
+                        "top_genres": top_genres_playlist,
                         "total_tracks": num_playlist_tracks,
                         "unique_artists": num_unique_artists,
-                        "unique_genres": num_unique_genres
+                        "unique_genres": num_unique_genres,
+                        "top_popular_tracks": top_5_popular_tracks,
+                        "bottom_popular_tracks": bottom_5_popular_tracks,
+                        "top_followed_artists": top_5_followed_artists,
+                        "bottom_followed_artists": bottom_5_followed_artists,
+                        "avg_stats": avg_stats,
+                        "scatter_plot_data": scatter_plot_data
                     }
 
             except spotipy.SpotifyException as e:

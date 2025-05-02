@@ -28,7 +28,7 @@
  {% elif viz_data %}
  {# --- SECTION 1: Raw Data Tables (in Flex Containers) --- #}
     <h2>Raw Data Tables ({{ selected_time_range.replace('_', ' ') | title }})</h2>
-    <div class="raw-data-flex-container">
+    <div class="flex-container">
         <div class="data-table-container">
             <h3>Top Artists (Max {{ viz_data.artists_raw | length }})</h3>
             <div class="scrollable-table">

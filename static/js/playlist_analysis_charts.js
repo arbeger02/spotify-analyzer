@@ -11,6 +11,68 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log("playlistAnalysisVizData found:", JSON.stringify(playlistAnalysisVizData, null, 2));
         try {
             renderPlaylistAnalysisCharts(playlistAnalysisVizData);
+            // --- NEW: Scatter Plot Setup ---
+            const scatterData = playlistAnalysisVizData.scatter_plot_data;
+            const xAxisSelect = document.getElementById('scatter-x-axis');
+            const yAxisSelect = document.getElementById('scatter-y-axis');
+
+            // Function to render/update the scatter plot
+            function updateScatterPlot() {
+                const xFeature = xAxisSelect.value;
+                const yFeature = yAxisSelect.value;
+                console.log(`Updating scatter plot: X=${xFeature}, Y=${yFeature}`);
+
+                if (!scatterData || scatterData.length === 0) {
+                    document.getElementById('playlist_scatter_plot').innerHTML = '<p>No track data for scatter plot.</p>';
+                    return;
+                }
+
+                // Extract data, handling potential null/undefined values
+                const xValues = scatterData.map(track => track[xFeature] ?? null); // Use nullish coalescing
+                const yValues = scatterData.map(track => track[yFeature] ?? null);
+                const hoverTexts = scatterData.map(track =>
+                    `Track: ${track.name || 'N/A'}<br>Artist: ${Array.isArray(track.artists) ? track.artists.join(', ') : 'N/A'}<br>${xFeature}: ${track[xFeature] ?? 'N/A'}<br>${yFeature}: ${track[yFeature] ?? 'N/A'}`
+                );
+
+                const trace = {
+                    x: xValues,
+                    y: yValues,
+                    mode: 'markers',
+                    type: 'scatter',
+                    text: hoverTexts,
+                    hoverinfo: 'text',
+                    marker: {
+                        size: 8,
+                        color: yValues, // Color points by Y value (e.g., popularity)
+                        colorscale: 'Viridis', // Choose a colorscale
+                        opacity: 0.7,
+                        colorbar: {
+                        title: yFeature.charAt(0).toUpperCase() + yFeature.slice(1) // Capitalize Y feature name
+                        }
+                    }
+                };
+
+                // Capitalize feature names for axis titles
+                const formatAxisTitle = (feature) => feature.charAt(0).toUpperCase() + feature.slice(1);
+
+                const layout = {
+                    xaxis: { title: formatAxisTitle(xFeature), automargin: true },
+                    yaxis: { title: formatAxisTitle(yFeature), automargin: true },
+                    margin: { l: 60, r: 30, b: 50, t: 40 },
+                    hovermode: 'closest', // Improve hover interaction
+                    hoverlabel: { bgcolor: "#FFF", font: { color: "#000", size: 12 }, bordercolor: '#ccc' }
+                };
+
+                Plotly.newPlot('playlist_scatter_plot', [trace], layout, {responsive: true});
+                console.log("Scatter plot updated.");
+            }
+
+            // Add event listeners to dropdowns
+            xAxisSelect.addEventListener('change', updateScatterPlot);
+            yAxisSelect.addEventListener('change', updateScatterPlot);
+
+            // Initial render with default selections
+            updateScatterPlot();
             console.log("renderPlaylistAnalysisCharts function finished.");
         } catch (error) {
             console.error("Error calling renderPlaylistAnalysisCharts:", error);
@@ -40,6 +102,50 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 function renderPlaylistAnalysisCharts(data) {
     console.log("Inside renderPlaylistAnalysisCharts function.");
+
+     // --- Most Followed Artists Chart ---
+    try {
+        const artists = data.top_followed_artists || [];
+        if (artists.length > 0) {
+            const artistNames = artists.map(a => a.name);
+            const artistFollowers = artists.map(a => a.followers);
+            const trace = {
+                y: artistNames.reverse(),
+                x: artistFollowers.reverse(),
+                text: artistFollowers.map(f => `${f.toLocaleString()} followers`),
+                hoverinfo: 'text+y',
+                type: 'bar', orientation: 'h', marker: { color: '#0d6efd' } // Blue
+            };
+             const layout = { /* ... similar layout ... */
+                 xaxis: { title: 'Total Followers', automargin: true },
+                 yaxis: { automargin: true },
+                 margin: { l: 150, r: 30, b: 50, t: 30 }
+             };
+            Plotly.newPlot('playlist_most_followed_artists_chart', [trace], layout, {responsive: true});
+        } else { document.getElementById('playlist_most_followed_artists_chart').innerHTML = '<p>No data</p>';}
+    } catch(e) { console.error("Error rendering most followed artists chart:", e); }
+
+     // --- Least Followed Artists Chart ---
+    try {
+        const artists = data.bottom_followed_artists || [];
+        if (artists.length > 0) {
+             const artistNames = artists.map(a => a.name);
+            const artistFollowers = artists.map(a => a.followers);
+            const trace = {
+                y: artistNames.reverse(),
+                x: artistFollowers.reverse(), // Already sorted ascending, reverse for plot
+                text: artistFollowers.map(f => `${f.toLocaleString()} followers`),
+                hoverinfo: 'text+y',
+                type: 'bar', orientation: 'h', marker: { color: '#6c757d' } // Grey
+            };
+             const layout = { /* ... similar layout ... */
+                xaxis: { title: 'Total Followers', automargin: true },
+                 yaxis: { automargin: true },
+                 margin: { l: 150, r: 30, b: 50, t: 30 }
+             };
+            Plotly.newPlot('playlist_least_followed_artists_chart', [trace], layout, {responsive: true});
+        } else { document.getElementById('playlist_least_followed_artists_chart').innerHTML = '<p>No data</p>';}
+    } catch(e) { console.error("Error rendering least followed artists chart:", e); }
 
     // --- Top 10 Artists Chart (Playlist) ---
     try {

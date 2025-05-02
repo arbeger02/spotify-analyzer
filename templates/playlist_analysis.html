@@ -63,17 +63,169 @@
         </div>
     </div>
 
-    {# --- Charts Section --- #}
-    <div id="playlist-charts"> {# Unique container ID #}
+    {# --- Charts & Tables Section --- #}
+    <div id="playlist-charts">
         <div class="chart-container"> {# Use consistent styling class #}
             <h2>Top 10 Artists (in Playlist)</h2>
             {# Use unique IDs for chart divs on this page #}
             <div id="playlist_top_artists_chart"></div>
         </div>
-
+    
         <div class="chart-container"> {# Use consistent styling class #}
             <h2>Top 10 Genres (in Playlist)</h2>
             <div id="playlist_top_genres_chart"></div>
+        </div>
+    </div>
+
+    {# --- Average Audio Features Stats --- #}
+    <div class="summary-stats-container audio-features-stats"> {# Add specific class #}
+        {% if viz_data.avg_stats %}
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.avg_stats.get('avg_tempo', 'N/A') }}</span>
+            <span class="stat-label">Avg. Tempo (BPM)</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.avg_stats.get('avg_energy', 'N/A') }}</span>
+            <span class="stat-label">Avg. Energy</span>
+        </div>
+         <div class="stat-item">
+            <span class="stat-value">{{ viz_data.avg_stats.get('avg_danceability', 'N/A') }}</span>
+            <span class="stat-label">Avg. Danceability</span>
+        </div>
+         <div class="stat-item">
+            <span class="stat-value">{{ viz_data.avg_stats.get('avg_valence', 'N/A') }}</span>
+            <span class="stat-label">Avg. Valence (Positivity)</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ viz_data.avg_stats.get('avg_popularity', 'N/A') }}</span>
+            <span class="stat-label">Avg. Popularity</span>
+        </div>
+        {% else %}
+        <p>Average audio features not available.</p>
+        {% endif %}
+    </div>
+    
+    {# --- Interactive Scatter Plot Section --- #}
+    <div class="chart-container">
+        <h2>Track Feature Scatter Plot</h2>
+        <div class="scatter-controls">
+            <label for="scatter-x-axis">X-Axis:</label>
+            <select id="scatter-x-axis">
+                <option value="tempo" selected>Tempo</option>
+                <option value="popularity">Popularity</option>
+                <option value="energy">Energy</option>
+                <option value="danceability">Danceability</option>
+                <option value="valence">Valence</option>
+                <option value="acousticness">Acousticness</option>
+                <option value="instrumentalness">Instrumentalness</option>
+                <option value="liveness">Liveness</option>
+                <option value="speechiness">Speechiness</option>
+            </select>
+
+            <label for="scatter-y-axis">Y-Axis:</label>
+            <select id="scatter-y-axis">
+                 <option value="tempo">Tempo</option>
+                <option value="popularity" selected>Popularity</option> {# Default Y #}
+                <option value="energy">Energy</option>
+                <option value="danceability">Danceability</option>
+                <option value="valence">Valence</option>
+                <option value="acousticness">Acousticness</option>
+                <option value="instrumentalness">Instrumentalness</option>
+                <option value="liveness">Liveness</option>
+                <option value="speechiness">Speechiness</option>
+            </select>
+        </div>
+        <div id="playlist_scatter_plot" style="min-height: 450px;"></div> {# Plot container #}
+    </div>
+
+    <div class="flex-container">
+
+        {# --- Most Popular Tracks Table --- #}
+        <div class="data-table-container list-table"> {# Add specific class #}
+            <h2>Most Popular Tracks</h2>
+            <div class="fixed-height-table"> {# Optional: Use if you want constrained height #}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th></th> {# Image col #}
+                            <th>Track</th>
+                            <th>Artist(s)</th>
+                            <th>Album</th>
+                            <th>Popularity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for track in viz_data.top_popular_tracks %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                {% if track.album_image_url %}
+                                <img src="{{ track.album_image_url }}" alt="{{ track.album_name }}" class="table-thumb">
+                                {% else %} {# Placeholder #}
+                                <div class="table-placeholder-thumb"></div>
+                                {% endif %}
+                            </td>
+                            <td>{{ track.name }}</td>
+                            <td>{{ track.artists | join(', ') }}</td>
+                            <td>{{ track.album_name }}</td>
+                            <td>{{ track.popularity }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6">No data available.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {# --- Least Popular Tracks Table --- #}
+         <div class="data-table-container list-table">
+            <h2>Least Popular Tracks</h2>
+             <div class="fixed-height-table">
+                <table>
+                     <thead>
+                        <tr>
+                            <th>#</th>
+                            <th></th> {# Image col #}
+                            <th>Track</th>
+                            <th>Artist(s)</th>
+                            <th>Album</th>
+                            <th>Popularity</th>
+                        </tr>
+                    </thead>
+                     <tbody>
+                        {% for track in viz_data.bottom_popular_tracks %}
+                        <tr>
+                             {# Use track popularity rank or simple index #}
+                             {# For Bottom 5, index might be clearer than rank #}
+                            <td>{{ loop.index }}</td>
+                             <td>
+                                {% if track.album_image_url %}
+                                <img src="{{ track.album_image_url }}" alt="{{ track.album_name }}" class="table-thumb">
+                                {% else %}
+                                <div class="table-placeholder-thumb"></div>
+                                {% endif %}
+                            </td>
+                            <td>{{ track.name }}</td>
+                            <td>{{ track.artists | join(', ') }}</td>
+                            <td>{{ track.album_name }}</td>
+                            <td>{{ track.popularity }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6">No data available.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+         <div class="chart-container">
+            <h2>Most Followed Artists (Top 5 in Playlist)</h2>
+            <div id="playlist_most_followed_artists_chart"></div>
+        </div>
+         <div class="chart-container">
+            <h2>Least Followed Artists (Bottom 5 in Playlist)</h2>
+            <div id="playlist_least_followed_artists_chart"></div>
         </div>
     </div>
 

@@ -138,21 +138,53 @@ hr {
 
 /* --- Chart Containers --- */
 .chart-container {
+    flex-basis: calc(50% - 15px); /* Each takes half width minus half the gap */
+    min-width: 350px; /* Minimum width before wrapping */
     min-height: 350px; /* Ensure space for charts */
     background-color: #fff; /* White background for charts */
     padding: 20px;
     border-radius: 8px; /* Rounded corners */
     box-shadow: 0 1px 3px rgba(0,0,0,0.1); /* Subtle shadow */
     margin-bottom: 30px;
+    display: flex; /* Allow inner elements like scrollable table to size correctly */
+    flex-direction: column;
 }
 
 /* --- Raw Data Tables --- */
-.raw-data-flex-container {
+.flex-container {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 30px;
+    margin-bottom: 30px;
+}
+
+/* Style for the placeholder if album art is missing in tables */
+.table-placeholder-thumb {
+    width: 30px; /* Match .table-thumb */
+    height: 30px;
+    background-color: #e9ecef; /* Light grey background */
+    border-radius: 3px; /* Match .table-thumb */
+    display: inline-block; /* Or flex align-items center on parent td */
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+/* Optional: Adjust styling for the 5-item list tables if needed */
+.list-table .scrollable-table {
+    /* Maybe remove max-height if you don't want scroll for just 5 items */
+     max-height: none;
+     overflow-y: visible;
+     border: none; /* Remove border if no scroll */
+}
+.list-table table {
+     /* Add border to table itself if scrollable div border removed */
+     border: 1px solid #e0e0e0;
+}
+
+/* Adjust spacing if needed */
+.list-table {
     margin-bottom: 30px;
 }
 
@@ -200,6 +232,42 @@ table {
     width: 100%;
     border-collapse: collapse; /* Clean table lines */
 }
+
+/* --- Style for second stats bar if needed --- */
+.audio-features-stats {
+    background-color: #e2e6ea; /* Slightly different background maybe */
+    /* Or just use .summary-stats-container */
+    margin-top: -10px; /* Reduce gap if placed right below first stats */
+    margin-bottom: 30px;
+}
+.audio-features-stats .stat-value {
+    color: #0d6efd; /* Different color for these stats maybe (blue) */
+}
+
+/* --- Scatter Plot Controls --- */
+.scatter-controls {
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+}
+
+.scatter-controls label {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.scatter-controls select {
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+}
+
 
 th, td {
     padding: 10px 12px;
